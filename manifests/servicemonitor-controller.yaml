@@ -1,0 +1,27 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+apiVersion: "monitoring.coreos.com/v1"
+kind: "ServiceMonitor"
+metadata:
+  labels:
+    app.kubernetes.io/name: "dacs-mixin"
+    app.kubernetes.io/part-of: "dacs"
+  name: "dacs-controller"
+spec:
+  endpoints:
+    - bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      interval: "30s"
+      path: "/metrics"
+      port: "https"
+      relabelings:
+        - action: "replace"
+          replacement: "dacs-controller"
+          targetLabel: "job"
+      scheme: "https"
+      tlsConfig:
+        insecureSkipVerify: true
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "dacs"
+      control-plane: "controller-manager"

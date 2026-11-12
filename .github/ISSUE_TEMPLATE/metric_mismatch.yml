@@ -1,0 +1,45 @@
+name: Metric mismatch
+description: A metric name, type, label or label value in the inventory differs from what DACS exposes
+labels: [inventory]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        The inventory in `docs/metrics.md` was built by reading DACS source at
+        one commit. If your DACS disagrees with it, this is the right place.
+  - type: input
+    id: dacs
+    attributes:
+      label: DACS version or commit
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Cache server
+        - Cache client (OTLP)
+        - cache-controller
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the inventory says
+      placeholder: "cache_server_request_counter{request_type, status}, counter"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What you observe
+      description: Paste the relevant lines of /metrics output, or the PromQL you used and its result.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: pipeline
+    attributes:
+      label: For client metrics, describe your OTLP pipeline
+      description: Prometheus OTLP receiver or OpenTelemetry Collector, exporter type and relevant settings.

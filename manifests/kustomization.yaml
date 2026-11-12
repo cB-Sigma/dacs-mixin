@@ -1,0 +1,26 @@
+# kubectl apply -k manifests/
+#
+# Installs the PrometheusRule, the cache server PodMonitor, the controller
+# ServiceMonitor and four Grafana dashboard ConfigMaps into one namespace.
+# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Change this to the namespace your Prometheus Operator and Grafana sidecar
+# watch, or override it from an overlay.
+namespace: monitoring
+
+resources:
+  - prometheusrule.yaml
+  - podmonitor-cache-server.yaml
+  - servicemonitor-controller.yaml
+  - dashboard-overview.yaml
+  - dashboard-cache-servers.yaml
+  - dashboard-clients.yaml
+  - dashboard-controller.yaml
+
+# Most Prometheus Operator installations only select objects that carry a
+# particular label. Uncomment and adjust:
+# labels:
+#   - pairs:
+#       release: kube-prometheus-stack

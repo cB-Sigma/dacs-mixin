@@ -1,0 +1,35 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+apiVersion: "monitoring.coreos.com/v1"
+kind: "PrometheusRule"
+metadata:
+  labels:
+    app.kubernetes.io/name: "dacs-mixin"
+    app.kubernetes.io/part-of: "dacs"
+  name: "dacs-mixin-client"
+spec:
+  groups:
+    - name: "dacs-client.rules"
+      rules:
+        - expr: |
+            sum by (job) (rate(cache_client_download_cache_hits_total[15m]))
+            /
+            (
+              sum by (job) (rate(cache_client_download_cache_hits_total[15m]))
+              +
+              sum by (job) (rate(cache_client_download_cache_misses_total[15m]))
+            )
+          record: "dacs:client:download_hit_ratio_rate15m"
+    - name: "dacs-client"
+      rules:
+        - alert: "DacsClientDnsErrors"
+          annotations:
+            description: "Workload {{ $labels.job }} failed to resolve cache server {{ $labels.hostname }} {{ $value | printf \"%.0f\" }} times in the last 15m. Requests for keys owned by that server fall through to Blob Storage."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsClientDnsErrors.md"
+            summary: "DACS clients cannot resolve a cache server."
+          expr: |
+            sum by (job, hostname) (
+              increase(cache_client_dns_errors_total[15m])
+            ) > 0
+          for: "15m"
+          labels:
+            severity: "warning"

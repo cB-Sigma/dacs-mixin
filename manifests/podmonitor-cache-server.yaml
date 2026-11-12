@@ -1,0 +1,31 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+apiVersion: "monitoring.coreos.com/v1"
+kind: "PodMonitor"
+metadata:
+  labels:
+    app.kubernetes.io/name: "dacs-mixin"
+    app.kubernetes.io/part-of: "dacs"
+  name: "dacs-cache-server"
+spec:
+  namespaceSelector:
+    any: true
+  podMetricsEndpoints:
+    - interval: "30s"
+      path: "/metrics"
+      port: "metrics"
+      relabelings:
+        - action: "replace"
+          replacement: "dacs-cache-server"
+          targetLabel: "job"
+        - action: "replace"
+          sourceLabels:
+            - "__meta_kubernetes_pod_controller_name"
+          targetLabel: "cache"
+        - action: "replace"
+          regex: "(.+)"
+          sourceLabels:
+            - "__meta_kubernetes_pod_label_dacs_azure_com_cache_name"
+          targetLabel: "cache"
+  selector:
+    matchLabels:
+      app: "cacheserver"

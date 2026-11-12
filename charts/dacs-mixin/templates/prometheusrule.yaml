@@ -1,0 +1,35 @@
+{{- if .Values.rules.enabled }}
+{{- $files := list }}
+{{- if .Values.rules.cache.recording }}{{ $files = append $files "cache-rules.yaml" }}{{ end }}
+{{- if .Values.rules.cache.alerts }}{{ $files = append $files "cache-alerts.yaml" }}{{ end }}
+{{- if .Values.rules.controller.alerts }}{{ $files = append $files "controller-alerts.yaml" }}{{ end }}
+{{- if .Values.rules.client.enabled }}{{ $files = concat $files (list "client-rules.yaml" "client-alerts.yaml") }}{{ end }}
+{{- if or $files .Values.rules.capacity }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "dacs-mixin.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dacs-mixin.labels" . | nindent 4 }}
+    {{- with .Values.rules.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- range $files }}
+    {{- include "dacs-mixin.groups" (dict "root" $ "file" .) | nindent 4 }}
+    {{- end }}
+    {{- with .Values.rules.capacity }}
+    - name: dacs-cache-capacity.rules
+      rules:
+        {{- range . }}
+        - record: dacs:cache_server:capacity_bytes
+          expr: vector({{ mul (int64 (required "rules.capacity[].serverSizeInGB is required" .serverSizeInGB)) 1073741824 }})
+          labels:
+            namespace: {{ required "rules.capacity[].namespace is required" .namespace | quote }}
+            cache: {{ required "rules.capacity[].cache is required" .cache | quote }}
+        {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

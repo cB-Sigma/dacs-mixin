@@ -1,0 +1,75 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+groups:
+  - name: "dacs-cache.rules"
+    rules:
+      - expr: |
+          sum by (namespace, cache, request_type, status) (
+            rate(cache_server_request_counter{job="dacs-cache-server"}[5m])
+          )
+        record: "dacs:cache:request_rate5m"
+      - expr: |
+          sum by (namespace, cache) (dacs:cache:request_rate5m{request_type="Download", status="Success"})
+          /
+          sum by (namespace, cache) (dacs:cache:request_rate5m{request_type="Download", status=~"Success|InvalidTransition"})
+        record: "dacs:cache:download_hit_ratio_rate5m"
+      - expr: |
+          sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown", status=~"BadRequest|InternalError|NetworkError|NotSet"})
+          /
+          sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown"})
+        record: "dacs:cache:error_ratio_rate5m"
+      - expr: |
+          histogram_quantile(
+            0.50,
+            sum by (namespace, cache, request_type, le) (
+              rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+            )
+          )
+        record: "dacs:cache:request_latency_ms:p50_rate5m"
+      - expr: |
+          histogram_quantile(
+            0.90,
+            sum by (namespace, cache, request_type, le) (
+              rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+            )
+          )
+        record: "dacs:cache:request_latency_ms:p90_rate5m"
+      - expr: |
+          histogram_quantile(
+            0.99,
+            sum by (namespace, cache, request_type, le) (
+              rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+            )
+          )
+        record: "dacs:cache:request_latency_ms:p99_rate5m"
+      - expr: |
+          sum by (namespace, cache) (
+            rate(cache_server_download_request_size_bytes_sum{job="dacs-cache-server"}[5m])
+          )
+        record: "dacs:cache:served_bytes_rate5m"
+      - expr: |
+          sum by (namespace, cache) (
+            rate(cache_server_upload_request_size_bytes_sum{job="dacs-cache-server"}[5m])
+          )
+        record: "dacs:cache:written_bytes_rate5m"
+      - expr: |
+          sum by (namespace, cache) (cache_server_cache_size_bytes{job="dacs-cache-server"})
+        record: "dacs:cache:size_bytes"
+      - expr: |
+          sum by (namespace, cache) (up{job="dacs-cache-server"})
+        record: "dacs:cache:servers_up"
+  - name: "dacs-cache-fleet.rules"
+    rules:
+      - expr: |
+          max by (namespace, cache) (
+            label_replace(kube_statefulset_replicas{job="kube-state-metrics"}, "cache", "$1", "statefulset", "(.+)")
+          )
+          and on (namespace, cache)
+          group by (namespace, cache) (last_over_time(up{job="dacs-cache-server"}[1h]))
+        record: "dacs:cache:servers_desired"
+      - expr: |
+          max by (namespace, cache) (
+            label_replace(kube_statefulset_status_replicas_ready{job="kube-state-metrics"}, "cache", "$1", "statefulset", "(.+)")
+          )
+          and on (namespace, cache)
+          group by (namespace, cache) (last_over_time(up{job="dacs-cache-server"}[1h]))
+        record: "dacs:cache:servers_ready"

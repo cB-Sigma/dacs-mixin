@@ -1,0 +1,278 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+apiVersion: "monitoring.coreos.com/v1"
+kind: "PrometheusRule"
+metadata:
+  labels:
+    app.kubernetes.io/name: "dacs-mixin"
+    app.kubernetes.io/part-of: "dacs"
+  name: "dacs-mixin"
+spec:
+  groups:
+    - name: "dacs-cache.rules"
+      rules:
+        - expr: |
+            sum by (namespace, cache, request_type, status) (
+              rate(cache_server_request_counter{job="dacs-cache-server"}[5m])
+            )
+          record: "dacs:cache:request_rate5m"
+        - expr: |
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type="Download", status="Success"})
+            /
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type="Download", status=~"Success|InvalidTransition"})
+          record: "dacs:cache:download_hit_ratio_rate5m"
+        - expr: |
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown", status=~"BadRequest|InternalError|NetworkError|NotSet"})
+            /
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown"})
+          record: "dacs:cache:error_ratio_rate5m"
+        - expr: |
+            histogram_quantile(
+              0.50,
+              sum by (namespace, cache, request_type, le) (
+                rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+              )
+            )
+          record: "dacs:cache:request_latency_ms:p50_rate5m"
+        - expr: |
+            histogram_quantile(
+              0.90,
+              sum by (namespace, cache, request_type, le) (
+                rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+              )
+            )
+          record: "dacs:cache:request_latency_ms:p90_rate5m"
+        - expr: |
+            histogram_quantile(
+              0.99,
+              sum by (namespace, cache, request_type, le) (
+                rate(cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server"}[5m])
+              )
+            )
+          record: "dacs:cache:request_latency_ms:p99_rate5m"
+        - expr: |
+            sum by (namespace, cache) (
+              rate(cache_server_download_request_size_bytes_sum{job="dacs-cache-server"}[5m])
+            )
+          record: "dacs:cache:served_bytes_rate5m"
+        - expr: |
+            sum by (namespace, cache) (
+              rate(cache_server_upload_request_size_bytes_sum{job="dacs-cache-server"}[5m])
+            )
+          record: "dacs:cache:written_bytes_rate5m"
+        - expr: |
+            sum by (namespace, cache) (cache_server_cache_size_bytes{job="dacs-cache-server"})
+          record: "dacs:cache:size_bytes"
+        - expr: |
+            sum by (namespace, cache) (up{job="dacs-cache-server"})
+          record: "dacs:cache:servers_up"
+    - name: "dacs-cache-fleet.rules"
+      rules:
+        - expr: |
+            max by (namespace, cache) (
+              label_replace(kube_statefulset_replicas{job="kube-state-metrics"}, "cache", "$1", "statefulset", "(.+)")
+            )
+            and on (namespace, cache)
+            group by (namespace, cache) (last_over_time(up{job="dacs-cache-server"}[1h]))
+          record: "dacs:cache:servers_desired"
+        - expr: |
+            max by (namespace, cache) (
+              label_replace(kube_statefulset_status_replicas_ready{job="kube-state-metrics"}, "cache", "$1", "statefulset", "(.+)")
+            )
+            and on (namespace, cache)
+            group by (namespace, cache) (last_over_time(up{job="dacs-cache-server"}[1h]))
+          record: "dacs:cache:servers_ready"
+    - name: "dacs-cache-availability"
+      rules:
+        - alert: "DacsCacheServerDown"
+          annotations:
+            description: "Prometheus cannot scrape cache server {{ $labels.pod }} of cache {{ $labels.namespace }}/{{ $labels.cache }}. Keys that hash to this server are being read from Blob Storage instead of the cache."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerDown.md"
+            summary: "DACS cache server metrics endpoint is down."
+          expr: |
+            up{job="dacs-cache-server"} == 0
+          for: "5m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheServersNotReady"
+          annotations:
+            description: "Cache {{ $labels.namespace }}/{{ $labels.cache }} has {{ $value }} ready cache server pods, fewer than its StatefulSet asks for. Clients still address the full server list, so keys owned by the missing servers miss the cache."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServersNotReady.md"
+            summary: "DACS cache has fewer ready servers than desired."
+          expr: |
+            dacs:cache:servers_ready < dacs:cache:servers_desired
+          for: "15m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheNoReadyServers"
+          annotations:
+            description: "Cache {{ $labels.namespace }}/{{ $labels.cache }} has zero ready cache server pods. Every read falls through to Blob Storage and discovery requests fail."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheNoReadyServers.md"
+            summary: "DACS cache has no ready servers."
+          expr: |
+            dacs:cache:servers_ready == 0 and dacs:cache:servers_desired > 0
+          for: "5m"
+          labels:
+            severity: "critical"
+    - name: "dacs-cache-traffic"
+      rules:
+        - alert: "DacsCacheHitRatioLow"
+          annotations:
+            description: "Only {{ $value | humanizePercentage }} of download requests to cache {{ $labels.namespace }}/{{ $labels.cache }} were hits over the last 5 minutes. Expected while a cache warms up; sustained, it means workloads are mostly reading from Blob Storage."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheHitRatioLow.md"
+            summary: "DACS cache hit ratio is low."
+          expr: |
+            dacs:cache:download_hit_ratio_rate5m < 0.5
+            and on (namespace, cache)
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type="Download"}) > 1
+          for: "30m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheErrorRatioHigh"
+          annotations:
+            description: "{{ $value | humanizePercentage }} of requests to cache {{ $labels.namespace }}/{{ $labels.cache }} ended in an error status (BadRequest|InternalError|NetworkError|NotSet)."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheErrorRatioHigh.md"
+            summary: "DACS cache servers are returning errors."
+          expr: |
+            dacs:cache:error_ratio_rate5m > 0.05
+            and on (namespace, cache)
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown"}) > 0.1
+          for: "10m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheErrorRatioCritical"
+          annotations:
+            description: "{{ $value | humanizePercentage }} of requests to cache {{ $labels.namespace }}/{{ $labels.cache }} ended in an error status (BadRequest|InternalError|NetworkError|NotSet)."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheErrorRatioHigh.md"
+            summary: "DACS cache servers are failing a large share of requests."
+          expr: |
+            dacs:cache:error_ratio_rate5m > 0.25
+            and on (namespace, cache)
+            sum by (namespace, cache) (dacs:cache:request_rate5m{request_type!~"Unknown"}) > 0.1
+          for: "5m"
+          labels:
+            severity: "critical"
+        - alert: "DacsCacheDownloadLatencyHigh"
+          annotations:
+            description: "p99 latency of successful downloads from cache {{ $labels.namespace }}/{{ $labels.cache }} is {{ $value | printf \"%.0f\" }}ms (threshold 1000ms)."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheDownloadLatencyHigh.md"
+            summary: "DACS cache download latency is high."
+          expr: |
+            dacs:cache:request_latency_ms:p99_rate5m{request_type="Download"} > 1000
+          for: "15m"
+          labels:
+            severity: "warning"
+    - name: "dacs-cache-saturation"
+      rules:
+        - alert: "DacsCacheServerAcceptQueueOverflow"
+          annotations:
+            description: "Cache server {{ $labels.pod }} ({{ $labels.namespace }}/{{ $labels.cache }}) is overflowing its TCP accept queue ({{ $value | printf \"%.2f\" }}/s). New client connections are being dropped or delayed."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerAcceptQueueOverflow.md"
+            summary: "DACS cache server accept queue is overflowing."
+          expr: |
+            sum by (namespace, cache, pod) (
+              rate(cache_server_accept_queue_overflows_total{job="dacs-cache-server"}[5m])
+            ) > 0
+          for: "10m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheServerListenDrops"
+          annotations:
+            description: "Cache server {{ $labels.pod }} ({{ $labels.namespace }}/{{ $labels.cache }}) is dropping {{ $value | printf \"%.2f\" }} connection attempts per second at the listen socket."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerListenDrops.md"
+            summary: "DACS cache server is dropping incoming connections."
+          expr: |
+            sum by (namespace, cache, pod) (
+              rate(cache_server_listen_drops_total{job="dacs-cache-server"}[5m])
+            ) > 1
+          for: "10m"
+          labels:
+            severity: "critical"
+        - alert: "DacsCacheServerSynQueueDrops"
+          annotations:
+            description: "Cache server {{ $labels.pod }} ({{ $labels.namespace }}/{{ $labels.cache }}) is dropping SYNs because its request queue is full ({{ $value | printf \"%.2f\" }}/s)."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerSynQueueDrops.md"
+            summary: "DACS cache server SYN queue is full."
+          expr: |
+            sum by (namespace, cache, pod) (
+              rate(cache_server_syn_queue_full_drops_total{job="dacs-cache-server"}[5m])
+            ) > 0
+          for: "10m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheServerAcceptErrors"
+          annotations:
+            description: "accept() on cache server {{ $labels.pod }} ({{ $labels.namespace }}/{{ $labels.cache }}) is failing with errno {{ $labels.errno }}."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerAcceptErrors.md"
+            summary: "DACS cache server accept() calls are failing."
+          expr: |
+            sum by (namespace, cache, pod, errno) (
+              rate(cache_server_accept_errors_total{job="dacs-cache-server"}[5m])
+            ) > 0
+          for: "5m"
+          labels:
+            severity: "warning"
+        - alert: "DacsCacheServerNearCapacity"
+          annotations:
+            description: "Cache server {{ $labels.pod }} ({{ $labels.namespace }}/{{ $labels.cache }}) is using {{ $value | humanizePercentage }} of its configured size. Eviction should keep usage below its size threshold; staying above it means eviction is disabled or cannot keep up."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerNearCapacity.md"
+            summary: "DACS cache server is close to its size limit."
+          expr: |
+            cache_server_cache_size_bytes{job="dacs-cache-server"}
+            / on (namespace, cache) group_left ()
+            dacs:cache_server:capacity_bytes
+            > 0.95
+          for: "30m"
+          labels:
+            severity: "warning"
+    - name: "dacs-controller"
+      rules:
+        - alert: "DacsControllerDown"
+          annotations:
+            description: "No healthy cache-controller target has been scraped. Existing caches keep serving, but Cache resources are not reconciled, scaled or rescheduled."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerDown.md"
+            summary: "DACS cache-controller is down or not scraped."
+          expr: |
+            absent(up{job="dacs-controller"} == 1)
+          for: "10m"
+          labels:
+            severity: "warning"
+        - alert: "DacsControllerReconcileErrors"
+          annotations:
+            description: "{{ $value | humanizePercentage }} of reconciles by controller \"{{ $labels.controller }}\" in namespace {{ $labels.namespace }} returned an error."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcileErrors.md"
+            summary: "DACS cache-controller reconciles are failing."
+          expr: |
+            sum by (namespace, controller) (
+              rate(controller_runtime_reconcile_errors_total{job="dacs-controller", controller="cache"}[5m])
+            )
+            /
+            sum by (namespace, controller) (
+              rate(controller_runtime_reconcile_total{job="dacs-controller", controller="cache"}[5m])
+            )
+            > 0.1
+          for: "15m"
+          labels:
+            severity: "warning"
+        - alert: "DacsControllerReconcilePanics"
+          annotations:
+            description: "Controller \"{{ $labels.controller }}\" in namespace {{ $labels.namespace }} recovered from {{ $value | printf \"%.0f\" }} panic(s) in the last 15 minutes."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcilePanics.md"
+            summary: "DACS cache-controller reconciler panicked."
+          expr: |
+            sum by (namespace, controller) (
+              increase(controller_runtime_reconcile_panics_total{job="dacs-controller"}[15m])
+            ) > 0
+          labels:
+            severity: "warning"
+        - alert: "DacsControllerWorkqueueStalled"
+          annotations:
+            description: "A worker of workqueue \"{{ $labels.name }}\" in namespace {{ $labels.namespace }} has been processing a single item for {{ $value | humanizeDuration }}."
+            runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerWorkqueueStalled.md"
+            summary: "DACS cache-controller has a stuck reconcile."
+          expr: |
+            max by (namespace, name) (
+              workqueue_longest_running_processor_seconds{job="dacs-controller"}
+            ) > 600
+          for: "5m"
+          labels:
+            severity: "warning"

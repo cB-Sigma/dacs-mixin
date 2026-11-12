@@ -1,0 +1,13 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+groups:
+  - name: "dacs-client.rules"
+    rules:
+      - expr: |
+          sum by (job) (rate(cache_client_download_cache_hits_total[15m]))
+          /
+          (
+            sum by (job) (rate(cache_client_download_cache_hits_total[15m]))
+            +
+            sum by (job) (rate(cache_client_download_cache_misses_total[15m]))
+          )
+        record: "dacs:client:download_hit_ratio_rate15m"

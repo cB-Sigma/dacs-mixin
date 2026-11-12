@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or bug in DACS itself
+    url: https://github.com/Azure/dacs/issues
+    about: This project only covers monitoring. Problems with DACS belong in the DACS repository.
+  - name: Security issue
+    url: https://github.com/cb-Sigma/dacs-mixin/security/advisories/new
+    about: Please report security problems privately.

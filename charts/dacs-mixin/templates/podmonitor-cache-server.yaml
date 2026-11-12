@@ -1,0 +1,44 @@
+{{- if .Values.monitors.cacheServer.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "dacs-mixin.fullname" . }}-cache-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dacs-mixin.labels" . | nindent 4 }}
+    {{- with .Values.monitors.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    {{- with .Values.monitors.cacheServer.namespaces }}
+    matchNames:
+      {{- toYaml . | nindent 6 }}
+    {{- else }}
+    any: true
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- toYaml .Values.monitors.cacheServer.podSelector | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitors.cacheServer.interval }}
+      {{- with .Values.monitors.cacheServer.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      relabelings:
+        # Fixed job name: the rules and dashboards select on it.
+        - action: replace
+          targetLabel: job
+          replacement: dacs-cache-server
+        # The StatefulSet is named after the Cache; used as a fallback.
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_controller_name]
+          targetLabel: cache
+        # Preferred source: the label the cache-controller sets on every cache server pod.
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_dacs_azure_com_cache_name]
+          regex: (.+)
+          targetLabel: cache
+{{- end }}

@@ -1,0 +1,50 @@
+name: Field report
+description: Tell us how dacs-mixin behaved on a real DACS cluster, good or bad
+labels: [field-report]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Nothing in this repository had been validated against a live cluster
+        when it was first published, so reports like this are the most useful
+        contribution there is. "Everything worked" counts.
+  - type: input
+    id: dacs
+    attributes:
+      label: DACS version or commit
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Monitoring stack
+      placeholder: e.g. kube-prometheus-stack NN.N, Grafana 11.x, Azure Monitor managed Prometheus
+    validations:
+      required: true
+  - type: textarea
+    id: scale
+    attributes:
+      label: Rough scale
+      placeholder: number of caches, servers per cache, kind of workload
+  - type: checkboxes
+    id: worked
+    attributes:
+      label: What worked
+      options:
+        - label: Cache server targets were scraped with the shipped PodMonitor
+        - label: The controller target was scraped with the shipped ServiceMonitor
+        - label: DACS / Overview showed sensible data
+        - label: DACS / Cache servers showed sensible data
+        - label: DACS / Controller showed sensible data
+        - label: DACS / Clients showed sensible data (client metrics enabled)
+        - label: Alerts fired when they should have
+  - type: textarea
+    id: problems
+    attributes:
+      label: What did not work, or looked wrong
+      description: Empty panels, odd units, noisy or silent alerts, misleading runbooks.
+  - type: textarea
+    id: anything
+    attributes:
+      label: Anything else
+      description: Threshold values that suited you, screenshots, ideas.

@@ -1,0 +1,21 @@
+# Configuration for grafana/dashboard-linter (make lint-dashboards).
+# Every exclusion is a deliberate deviation from the linter's conventions.
+exclusions:
+  template-job-rule:
+    reason: Each dashboard targets one fixed, configurable job selector (_config.*Selector), so a job variable would only ever have one value.
+  target-job-rule:
+    reason: Queries carry a fixed job matcher from _config instead of job=~"$job".
+  template-instance-rule:
+    reason: Cache servers are identified by pod; the scraped series already carry an `instance` label of their own that Prometheus renames to exported_instance.
+  target-instance-rule:
+    reason: Dashboards drill down by namespace, cache and pod, not by instance.
+  target-rate-interval-rule:
+    entries:
+      - dashboard: DACS / Clients
+        reason: Client metrics are pushed over OTLP every 5 minutes by default; $__rate_interval is far too short, so the dashboard uses its own $window variable.
+      - dashboard: DACS / Overview
+        panel: Caches
+        reason: Instant table query with a fixed 5m window.
+      - dashboard: DACS / Cache servers
+        panel: Cache servers
+        reason: Instant table query with a fixed 5m window.

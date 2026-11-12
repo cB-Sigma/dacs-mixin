@@ -1,0 +1,708 @@
+# Machine-readable metric inventory. This file is the allow-list used by
+# scripts/check_metrics.py: a dashboard or rule that references a metric,
+# label or label value not listed here fails CI.
+#
+# status:
+#   verified         name, type and labels read directly from source
+#   derived          OTLP name read from source; the Prometheus name follows
+#                    the standard OTLP translation and depends on the pipeline
+#   external         standard metric from another project
+#   config-supplied  series the operator has to provide
+#
+# labels: a null value means "any value"; a list enumerates every value the
+# source can emit. Human-readable version: docs/metrics.md
+verified_against:
+  repository: https://github.com/Azure/dacs
+  commit: 27ec57c
+  commit_date: '2026-11-11'
+target_labels:
+- job
+- instance
+- namespace
+- pod
+- container
+- cache
+- endpoint
+- service
+- le
+- quantile
+metrics:
+- name: cache_server_active_connections
+  type: gauge
+  unit: requests
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:42
+  help: Requests currently being handled by worker threads.
+  notes: Incremented when a worker starts handling a request and decremented when it finishes (Server.cpp:97,139), so it counts in-flight requests, not open sockets.
+- name: cache_server_cache_size_bytes
+  type: gauge
+  unit: bytes
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:47
+  help: Bytes stored by this cache server.
+  notes: Refreshed every 60 s by the metrics background thread (Server.cpp:393). The size limit is logged but not exported.
+- name: cache_server_listen_backlog_max
+  type: gauge
+  unit: connections
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:52
+  help: Backlog passed to listen().
+- name: cache_server_accept_queue_overflows_total
+  type: counter
+  unit: events
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:57
+  help: TcpExt.ListenOverflows deltas.
+  notes: Sampled from the kernel every 60 s.
+- name: cache_server_listen_drops_total
+  type: counter
+  unit: events
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:62
+  help: TcpExt.ListenDrops deltas.
+  notes: Sampled from the kernel every 60 s.
+- name: cache_server_syn_queue_full_drops_total
+  type: counter
+  unit: events
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:67
+  help: TcpExt.TCPReqQFullDrop deltas.
+  notes: Sampled from the kernel every 60 s.
+- name: cache_server_syn_cookies_sent_total
+  type: counter
+  unit: events
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:72
+  help: TcpExt.TCPReqQFullDoCookies deltas.
+  notes: Sampled from the kernel every 60 s.
+- name: cache_server_passive_opens_total
+  type: counter
+  unit: connections
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:77
+  help: Tcp.PassiveOpens deltas.
+  notes: Sampled from the kernel every 60 s.
+- name: cache_server_open_fds
+  type: gauge
+  unit: file handles
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:82
+  help: Allocated file handles from /proc/sys/fs/file-nr.
+  notes: /proc/sys/fs/file-nr is system-wide, so this is a node-level number.
+- name: cache_server_accept_errors_total
+  type: counter
+  unit: errors
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+    errno: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:87
+  help: accept() failures by errno.
+  notes: A series only appears after the first failure with that errno.
+- name: cache_server_successful_request_latency_ms
+  type: histogram
+  unit: milliseconds
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+    request_type:
+    - Unknown
+    - Reserved1
+    - Upload
+    - Download
+    - Reserved4
+    - Reserved5
+    - Delete
+    - Ibinit
+    - Getcachelastaccesstimedistributionrequest
+    - Getcacheservers
+    status:
+    - Success
+  source: src/subsystems/storage/cache_server/Metrics.cpp:100
+  help: Latency of successful requests.
+  notes: 'Buckets: 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, +Inf.'
+- name: cache_server_request_counter
+  type: counter
+  unit: requests
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+    request_type:
+    - Unknown
+    - Reserved1
+    - Upload
+    - Download
+    - Reserved4
+    - Reserved5
+    - Delete
+    - Ibinit
+    - Getcachelastaccesstimedistributionrequest
+    - Getcacheservers
+    status:
+    - Success
+    - InvalidTransition
+    - BadRequest
+    - InternalError
+    - NetworkError
+    - NotSet
+  source: src/subsystems/storage/cache_server/Metrics.cpp:111
+  help: Requests by type and status.
+  notes: No _total suffix. Every request_type x status combination is pre-registered at 0.
+- name: cache_server_download_request_size_bytes
+  type: histogram
+  unit: bytes
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:120
+  help: Size of successful downloads.
+  notes: 'Buckets: 100000, 512000, 1024000, 4096000, 16384000, +Inf.'
+- name: cache_server_upload_request_size_bytes
+  type: histogram
+  unit: bytes
+  component: cache-server
+  status: verified
+  labels:
+    exported_instance: null
+  source: src/subsystems/storage/cache_server/Metrics.cpp:125
+  help: Size of successful uploads.
+  notes: 'Buckets: 100000, 512000, 1024000, 4096000, 16384000, +Inf.'
+- name: cache_client_upload_requests_total
+  otlp_name: cache_client_upload_requests
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:282
+  help: Upload calls.
+- name: cache_client_uploaded_bytes_total
+  otlp_name: cache_client_uploaded_bytes
+  type: counter
+  unit: bytes
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:481
+  help: Bytes uploaded to the cache.
+- name: cache_client_download_requests_total
+  otlp_name: cache_client_download_requests
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:542
+  help: Download calls.
+- name: cache_client_download_requested_bytes_total
+  otlp_name: cache_client_download_requested_bytes
+  type: counter
+  unit: bytes
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:543
+  help: Bytes requested from the cache.
+- name: cache_client_download_cache_hits_total
+  otlp_name: cache_client_download_cache_hits
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:789
+  help: Downloads served from the cache.
+- name: cache_client_downloaded_bytes_total
+  otlp_name: cache_client_downloaded_bytes
+  type: counter
+  unit: bytes
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:790
+  help: Bytes served from the cache.
+- name: cache_client_download_cache_misses_total
+  otlp_name: cache_client_download_cache_misses
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:796
+  help: Downloads the cache could not serve.
+- name: cache_client_delete_group_requests_total
+  otlp_name: cache_client_delete_group_requests
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:844
+  help: Group delete calls.
+- name: cache_client_get_last_access_time_distribution_requests_total
+  otlp_name: cache_client_get_last_access_time_distribution_requests
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:990
+  help: Last-access-time distribution queries.
+- name: cache_client_delete_by_last_access_time_requests_total
+  otlp_name: cache_client_delete_by_last_access_time_requests
+  type: counter
+  unit: requests
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:1133
+  help: Delete-by-last-access-time calls.
+- name: cache_client_dns_errors_total
+  otlp_name: cache_client_dns_errors
+  type: counter
+  unit: errors
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+    hostname: null
+  source: src/subsystems/storage/cache_client/connection/ConnectionManager.cpp:604
+  help: getaddrinfo() failures for a cache server host.
+- name: cache_client_upload_latency_ms
+  otlp_name: cache_client_upload_latency_ms
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:482
+  help: Latency of successful uploads.
+- name: cache_client_upload_latency_ms_40KB
+  otlp_name: cache_client_upload_latency_ms_40KB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful uploads in the 40KB I/O size class.
+- name: cache_client_upload_latency_ms_400KB
+  otlp_name: cache_client_upload_latency_ms_400KB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful uploads in the 400KB I/O size class.
+- name: cache_client_upload_latency_ms_4MB
+  otlp_name: cache_client_upload_latency_ms_4MB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful uploads in the 4MB I/O size class.
+- name: cache_client_upload_latency_ms_40MB
+  otlp_name: cache_client_upload_latency_ms_40MB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful uploads in the 40MB I/O size class.
+- name: cache_client_upload_latency_ms_huge
+  otlp_name: cache_client_upload_latency_ms_huge
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful uploads in the huge I/O size class.
+- name: cache_client_download_latency_ms
+  otlp_name: cache_client_download_latency_ms
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/cache_client/CacheClientImpl.cpp:791
+  help: Latency of successful downloads.
+- name: cache_client_download_latency_ms_40KB
+  otlp_name: cache_client_download_latency_ms_40KB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful downloads in the 40KB I/O size class.
+- name: cache_client_download_latency_ms_400KB
+  otlp_name: cache_client_download_latency_ms_400KB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful downloads in the 400KB I/O size class.
+- name: cache_client_download_latency_ms_4MB
+  otlp_name: cache_client_download_latency_ms_4MB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful downloads in the 4MB I/O size class.
+- name: cache_client_download_latency_ms_40MB
+  otlp_name: cache_client_download_latency_ms_40MB
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful downloads in the 40MB I/O size class.
+- name: cache_client_download_latency_ms_huge
+  otlp_name: cache_client_download_latency_ms_huge
+  type: histogram
+  unit: milliseconds
+  component: cache-client
+  status: derived
+  labels:
+    pid: null
+    rank: null
+  source: src/subsystems/storage/common/metrics/StorageMetrics.cpp:227
+  help: Latency of successful downloads in the huge I/O size class.
+- name: controller_runtime_reconcile_total
+  type: counter
+  unit: reconciles
+  component: controller
+  status: verified
+  labels:
+    controller: null
+    result:
+    - success
+    - error
+    - requeue
+    - requeue_after
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:33
+  help: Reconciles by result.
+- name: controller_runtime_reconcile_errors_total
+  type: counter
+  unit: errors
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:40
+  help: Reconciles that returned an error.
+- name: controller_runtime_terminal_reconcile_errors_total
+  type: counter
+  unit: errors
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:47
+  help: Reconciles that returned a terminal error.
+- name: controller_runtime_reconcile_panics_total
+  type: counter
+  unit: panics
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:54
+  help: Reconciles that panicked.
+- name: controller_runtime_reconcile_time_seconds
+  type: histogram
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:61
+  help: Reconcile duration.
+- name: controller_runtime_max_concurrent_reconciles
+  type: gauge
+  unit: workers
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:73
+  help: Configured worker count.
+- name: controller_runtime_active_workers
+  type: gauge
+  unit: workers
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:80
+  help: Workers currently reconciling.
+- name: controller_runtime_reconcile_timeouts_total
+  type: counter
+  unit: timeouts
+  component: controller
+  status: verified
+  labels:
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:89
+  help: Reconciles that timed out.
+- name: workqueue_depth
+  type: gauge
+  unit: items
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+    priority: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:49
+  help: Items waiting in the queue.
+- name: workqueue_adds_total
+  type: counter
+  unit: items
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:55
+  help: Items added to the queue.
+- name: workqueue_queue_duration_seconds
+  type: histogram
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:61
+  help: Time items wait in the queue.
+- name: workqueue_work_duration_seconds
+  type: histogram
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:71
+  help: Time spent processing an item.
+- name: workqueue_unfinished_work_seconds
+  type: gauge
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:81
+  help: Seconds of in-progress work.
+- name: workqueue_longest_running_processor_seconds
+  type: gauge
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:90
+  help: Age of the longest-running item.
+- name: workqueue_retries_total
+  type: counter
+  unit: items
+  component: controller
+  status: verified
+  labels:
+    name: null
+    controller: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/metrics/workqueue.go:97
+  help: Items re-queued.
+- name: controller_runtime_webhook_latency_seconds
+  type: histogram
+  unit: seconds
+  component: controller
+  status: verified
+  labels:
+    webhook: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/webhook/internal/metrics/metrics.go:34
+  help: Admission request latency.
+- name: controller_runtime_webhook_requests_total
+  type: counter
+  unit: requests
+  component: controller
+  status: verified
+  labels:
+    webhook: null
+    code: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/webhook/internal/metrics/metrics.go:48
+  help: Admission requests by HTTP code.
+- name: controller_runtime_webhook_requests_in_flight
+  type: gauge
+  unit: requests
+  component: controller
+  status: verified
+  labels:
+    webhook: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/webhook/internal/metrics/metrics.go:59
+  help: Admission requests in flight.
+- name: rest_client_requests_total
+  type: counter
+  unit: requests
+  component: controller
+  status: verified
+  labels:
+    code: null
+    method: null
+    host: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/metrics/client_go_adapter.go:131
+  help: Kubernetes API requests.
+- name: leader_election_master_status
+  type: gauge
+  unit: boolean
+  component: controller
+  status: verified
+  labels:
+    name: null
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/metrics/leaderelection.go:30
+  help: 1 when this replica holds the lease.
+- name: process_cpu_seconds_total
+  type: counter
+  unit: seconds
+  component: controller
+  status: verified
+  labels: {}
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:105
+  help: Process CPU time. Standard client_golang collector registered by controller-runtime.
+- name: process_resident_memory_bytes
+  type: gauge
+  unit: bytes
+  component: controller
+  status: verified
+  labels: {}
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:105
+  help: Process resident memory. Standard client_golang collector registered by controller-runtime.
+- name: go_goroutines
+  type: gauge
+  unit: goroutines
+  component: controller
+  status: verified
+  labels: {}
+  source: sigs.k8s.io/controller-runtime@v0.25.2/pkg/internal/controller/metrics/metrics.go:105
+  help: Goroutines. Standard client_golang collector registered by controller-runtime.
+- name: up
+  type: gauge
+  unit: ''
+  component: external
+  status: external
+  labels: {}
+  source: Prometheus
+  help: Synthetic per-target scrape health.
+- name: kube_statefulset_replicas
+  type: gauge
+  unit: ''
+  component: external
+  status: external
+  labels:
+    statefulset: null
+  source: kube-state-metrics
+  help: Desired replicas of a StatefulSet.
+- name: kube_statefulset_status_replicas_ready
+  type: gauge
+  unit: ''
+  component: external
+  status: external
+  labels:
+    statefulset: null
+  source: kube-state-metrics
+  help: Ready replicas of a StatefulSet.
+- name: dacs:cache_server:capacity_bytes
+  type: gauge
+  unit: bytes
+  component: config
+  status: config-supplied
+  labels: {}
+  source: docs/capacity.md
+  help: Per-server size limit supplied by the operator; DACS does not export it.

@@ -1,0 +1,35 @@
+# Every optional feature switched on. Used by `make lint-helm`.
+commonLabels:
+  release: kube-prometheus-stack
+rules:
+  labels:
+    role: alert-rules
+  client:
+    enabled: true
+  capacity:
+    - namespace: cache-server
+      cache: cache-sample
+      serverSizeInGB: 100
+    - namespace: ml
+      cache: weights
+      serverSizeInGB: 1800
+monitors:
+  labels:
+    team: storage
+  cacheServer:
+    namespaces: [cache-server, ml]
+    scrapeTimeout: 10s
+  controller:
+    namespaces: [cache-server]
+    scrapeTimeout: 10s
+    tlsConfig:
+      insecureSkipVerify: false
+      serverName: dacs-manager-metrics-service.cache-server.svc
+      ca:
+        secret:
+          name: metrics-server-cert
+          key: ca.crt
+dashboards:
+  namespace: monitoring
+  annotations:
+    grafana_folder: DACS

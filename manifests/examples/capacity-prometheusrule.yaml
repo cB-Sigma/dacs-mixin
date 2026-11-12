@@ -1,0 +1,24 @@
+# Example: tell the mixin how large each cache server is.
+#
+# DACS does not export its size limit (spec.serverSizeInGB), so the
+# DacsCacheServerNearCapacity alert and the "Capacity used" panel stay empty
+# until a dacs:cache_server:capacity_bytes series exists for the cache.
+# Copy this file, add one rule per Cache, and apply it. See docs/capacity.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dacs-mixin-capacity
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: dacs-mixin
+    app.kubernetes.io/part-of: dacs
+spec:
+  groups:
+    - name: dacs-cache-capacity.rules
+      rules:
+        # Cache "cache-sample" in namespace "cache-server", spec.serverSizeInGB: 100
+        - record: dacs:cache_server:capacity_bytes
+          expr: vector(100 * 1024 * 1024 * 1024)
+          labels:
+            namespace: cache-server
+            cache: cache-sample

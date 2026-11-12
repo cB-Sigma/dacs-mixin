@@ -1,0 +1,33 @@
+# Tools installed by `make tools`
+/.bin/
+/bin/
+
+# jsonnet-bundler (the mixin itself has no dependencies)
+/vendor/
+/jsonnetfile.lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Helm
+charts/*/charts/
+charts/*/Chart.lock
+*.tgz
+
+# Scratch output
+/tmp/
+/out/
+*.tmp
+*.orig
+*.rej
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

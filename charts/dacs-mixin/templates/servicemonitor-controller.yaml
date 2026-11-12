@@ -1,0 +1,45 @@
+{{- if .Values.monitors.controller.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dacs-mixin.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dacs-mixin.labels" . | nindent 4 }}
+    {{- with .Values.monitors.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    {{- with .Values.monitors.controller.namespaces }}
+    matchNames:
+      {{- toYaml . | nindent 6 }}
+    {{- else }}
+    any: true
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- toYaml .Values.monitors.controller.serviceSelector | nindent 6 }}
+  endpoints:
+    - port: https
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.monitors.controller.interval }}
+      {{- with .Values.monitors.controller.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.monitors.controller.bearerTokenFile }}
+      bearerTokenFile: {{ . }}
+      {{- end }}
+      {{- with .Values.monitors.controller.authorization }}
+      authorization:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tlsConfig:
+        {{- toYaml .Values.monitors.controller.tlsConfig | nindent 8 }}
+      relabelings:
+        # Fixed job name: the rules and dashboards select on it.
+        - action: replace
+          targetLabel: job
+          replacement: dacs-controller
+{{- end }}

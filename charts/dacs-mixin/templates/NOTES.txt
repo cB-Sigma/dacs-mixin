@@ -1,0 +1,31 @@
+dacs-mixin {{ .Chart.Version }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Unofficial community project, not affiliated with or endorsed by Microsoft.
+
+What was created:
+{{- if .Values.rules.enabled }}
+  * PrometheusRule {{ include "dacs-mixin.fullname" . }}
+{{- end }}
+{{- if .Values.monitors.cacheServer.enabled }}
+  * PodMonitor {{ include "dacs-mixin.fullname" . }}-cache-server (job="dacs-cache-server")
+{{- end }}
+{{- if .Values.monitors.controller.enabled }}
+  * ServiceMonitor {{ include "dacs-mixin.fullname" . }}-controller (job="dacs-controller")
+{{- end }}
+{{- if .Values.dashboards.enabled }}
+  * Grafana dashboard ConfigMaps in namespace "{{ default .Release.Namespace .Values.dashboards.namespace }}"
+{{- end }}
+
+Things to check if nothing shows up:
+  1. Your Prometheus must select these objects. Many installations require a
+     label such as `release: kube-prometheus-stack`; set it with commonLabels.
+  2. In Prometheus, Status > Targets should list dacs-cache-server and
+     dacs-controller. The controller target needs the Prometheus service
+     account to be allowed to GET /metrics (bind the upstream metrics-reader
+     ClusterRole to it).
+{{- if not .Values.rules.capacity }}
+  3. DacsCacheServerNearCapacity stays silent until you set rules.capacity,
+     because DACS does not export its size limit.
+{{- end }}
+
+Runbooks: https://github.com/cb-Sigma/dacs-mixin/tree/main/docs/runbooks

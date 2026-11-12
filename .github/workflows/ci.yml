@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27.4"
+  GOTOOLCHAIN: go1.27.4
+  BIN_DIR: ${{ github.workspace }}/.bin
+
+jobs:
+  test:
+    name: Render, lint, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Install Python dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-yaml
+
+      - name: Install jsonnet and promtool
+        run: make tools
+
+      - name: Render
+        run: make render
+
+      - name: Drift check (rendered files match jsonnet sources)
+        run: |
+          make drift
+          git diff --exit-code
+
+      - name: Lint (jsonnetfmt, jsonnet-lint, promtool check rules, dashboard queries)
+        run: make lint
+
+      - name: Alert and recording rule unit tests
+        run: make test-rules
+
+      - name: Metric inventory guard
+        run: make test-inventory
+
+      - name: Repository checks
+        run: make test-repo
+
+      - name: Unit tests for the check scripts
+        run: make test-unit
+
+  extra:
+    name: Dashboards, Helm chart, manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Install Python dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3-yaml
+
+      - name: Install helm, kustomize, kubeconform, dashboard-linter, mixtool
+        run: make tools-extra
+
+      - name: Dashboard linter
+        run: make lint-dashboards
+
+      - name: Helm chart
+        run: make lint-helm
+
+      - name: Manifests
+        run: make lint-manifests
+
+      - name: mixtool compatibility
+        run: make lint-mixtool

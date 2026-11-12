@@ -1,0 +1,54 @@
+# Rendered from jsonnet by `make render`. Do not edit by hand.
+groups:
+  - name: "dacs-controller"
+    rules:
+      - alert: "DacsControllerDown"
+        annotations:
+          description: "No healthy cache-controller target has been scraped. Existing caches keep serving, but Cache resources are not reconciled, scaled or rescheduled."
+          runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerDown.md"
+          summary: "DACS cache-controller is down or not scraped."
+        expr: |
+          absent(up{job="dacs-controller"} == 1)
+        for: "10m"
+        labels:
+          severity: "warning"
+      - alert: "DacsControllerReconcileErrors"
+        annotations:
+          description: "{{ $value | humanizePercentage }} of reconciles by controller \"{{ $labels.controller }}\" in namespace {{ $labels.namespace }} returned an error."
+          runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcileErrors.md"
+          summary: "DACS cache-controller reconciles are failing."
+        expr: |
+          sum by (namespace, controller) (
+            rate(controller_runtime_reconcile_errors_total{job="dacs-controller", controller="cache"}[5m])
+          )
+          /
+          sum by (namespace, controller) (
+            rate(controller_runtime_reconcile_total{job="dacs-controller", controller="cache"}[5m])
+          )
+          > 0.1
+        for: "15m"
+        labels:
+          severity: "warning"
+      - alert: "DacsControllerReconcilePanics"
+        annotations:
+          description: "Controller \"{{ $labels.controller }}\" in namespace {{ $labels.namespace }} recovered from {{ $value | printf \"%.0f\" }} panic(s) in the last 15 minutes."
+          runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcilePanics.md"
+          summary: "DACS cache-controller reconciler panicked."
+        expr: |
+          sum by (namespace, controller) (
+            increase(controller_runtime_reconcile_panics_total{job="dacs-controller"}[15m])
+          ) > 0
+        labels:
+          severity: "warning"
+      - alert: "DacsControllerWorkqueueStalled"
+        annotations:
+          description: "A worker of workqueue \"{{ $labels.name }}\" in namespace {{ $labels.namespace }} has been processing a single item for {{ $value | humanizeDuration }}."
+          runbook_url: "https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerWorkqueueStalled.md"
+          summary: "DACS cache-controller has a stuck reconcile."
+        expr: |
+          max by (namespace, name) (
+            workqueue_longest_running_processor_seconds{job="dacs-controller"}
+          ) > 600
+        for: "5m"
+        labels:
+          severity: "warning"

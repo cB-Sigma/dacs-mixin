@@ -1,0 +1,44 @@
+name: Bug report
+description: A dashboard, alert, rule, manifest or chart does not behave as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead. For a panel, name the dashboard and the panel.
+    validations:
+      required: true
+  - type: input
+    id: dacs
+    attributes:
+      label: DACS version or commit
+      placeholder: e.g. commit 27ec57c, or the cache server image tag
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install dacs-mixin?
+      options:
+        - kubectl apply -k
+        - Helm chart
+        - Imported dashboard JSON / rule files
+        - jsonnet
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Prometheus and Grafana versions
+      placeholder: e.g. Prometheus 3.x (kube-prometheus-stack NN.N), Grafana 11.x
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >
+        The query and its result, the alert as shown in Prometheus, or a few
+        relevant lines of a cache server's /metrics output
+        (`kubectl exec <pod> -c cacheserver -- curl -s localhost:9096/metrics`).
+        Remove anything sensitive.
+      render: text

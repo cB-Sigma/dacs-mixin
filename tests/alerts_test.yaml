@@ -1,0 +1,542 @@
+# Unit tests for the rendered rules, run with `promtool test rules`.
+# Every alert has at least one case where it fires and one where it must not.
+rule_files:
+  - ../rules_out/prometheus_rules.yaml
+  - ../rules_out/prometheus_alerts.yaml
+  - ../rules_out/prometheus_client_rules.yaml
+  - ../rules_out/prometheus_client_alerts.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------------------
+  # DacsCacheServerDown
+  # ---------------------------------------------------------------------------
+  - name: cache server scrape target down
+    interval: 1m
+    input_series:
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '1x10 0x30'
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-1"}'
+        values: '1x40'
+      # A short blip must not page.
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-2"}'
+        values: '1x10 0x2 1x27'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: DacsCacheServerDown
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: DacsCacheServerDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: dacs-cache-server
+              namespace: cache-server
+              cache: c1
+              pod: c1-0
+            exp_annotations:
+              summary: DACS cache server metrics endpoint is down.
+              description: Prometheus cannot scrape cache server c1-0 of cache cache-server/c1. Keys that hash to this server are being read from Blob Storage instead of the cache.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerDown.md
+
+  # ---------------------------------------------------------------------------
+  # DacsCacheServersNotReady, DacsCacheNoReadyServers
+  # ---------------------------------------------------------------------------
+  - name: fewer ready servers than desired
+    interval: 1m
+    input_series:
+      # c1 loses one of three servers.
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="cache-server", statefulset="c1"}'
+        values: '3x60'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="cache-server", statefulset="c1"}'
+        values: '3x10 2x50'
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '1x60'
+      # c2 loses every server; its pods are still discovered but down.
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="cache-server", statefulset="c2"}'
+        values: '2x60'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="cache-server", statefulset="c2"}'
+        values: '2x10 0x50'
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0"}'
+        values: '1x10 0x50'
+      # c3 loses every server and its scrape targets disappear entirely.
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="cache-server", statefulset="c3"}'
+        values: '1x60'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="cache-server", statefulset="c3"}'
+        values: '1x10 0x50'
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0"}'
+        values: '1x10 stale'
+      # c4 is healthy.
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="cache-server", statefulset="c4"}'
+        values: '2x60'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="cache-server", statefulset="c4"}'
+        values: '2x60'
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c4", pod="c4-0"}'
+        values: '1x60'
+      # An unrelated StatefulSet in the same namespace must be ignored.
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="cache-server", statefulset="postgres"}'
+        values: '3x60'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="cache-server", statefulset="postgres"}'
+        values: '0x60'
+    promql_expr_test:
+      - expr: dacs:cache:servers_desired
+        eval_time: 5m
+        exp_samples:
+          - labels: 'dacs:cache:servers_desired{namespace="cache-server", cache="c1"}'
+            value: 3
+          - labels: 'dacs:cache:servers_desired{namespace="cache-server", cache="c2"}'
+            value: 2
+          - labels: 'dacs:cache:servers_desired{namespace="cache-server", cache="c3"}'
+            value: 1
+          - labels: 'dacs:cache:servers_desired{namespace="cache-server", cache="c4"}'
+            value: 2
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DacsCacheServersNotReady
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: DacsCacheNoReadyServers
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DacsCacheServersNotReady
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DacsCacheNoReadyServers
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: cache-server, cache: c2 }
+            exp_annotations:
+              summary: DACS cache has no ready servers.
+              description: Cache cache-server/c2 has zero ready cache server pods. Every read falls through to Blob Storage and discovery requests fail.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheNoReadyServers.md
+          - exp_labels: { severity: critical, namespace: cache-server, cache: c3 }
+            exp_annotations:
+              summary: DACS cache has no ready servers.
+              description: Cache cache-server/c3 has zero ready cache server pods. Every read falls through to Blob Storage and discovery requests fail.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheNoReadyServers.md
+      - eval_time: 30m
+        alertname: DacsCacheServersNotReady
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1 }
+            exp_annotations:
+              summary: DACS cache has fewer ready servers than desired.
+              description: Cache cache-server/c1 has 2 ready cache server pods, fewer than its StatefulSet asks for. Clients still address the full server list, so keys owned by the missing servers miss the cache.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServersNotReady.md
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c2 }
+            exp_annotations:
+              summary: DACS cache has fewer ready servers than desired.
+              description: Cache cache-server/c2 has 0 ready cache server pods, fewer than its StatefulSet asks for. Clients still address the full server list, so keys owned by the missing servers miss the cache.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServersNotReady.md
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c3 }
+            exp_annotations:
+              summary: DACS cache has fewer ready servers than desired.
+              description: Cache cache-server/c3 has 0 ready cache server pods, fewer than its StatefulSet asks for. Clients still address the full server list, so keys owned by the missing servers miss the cache.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServersNotReady.md
+
+  # ---------------------------------------------------------------------------
+  # DacsCacheHitRatioLow
+  # ---------------------------------------------------------------------------
+  - name: hit ratio collapsed
+    interval: 1m
+    input_series:
+      # c1: 1 hit/s against 4 misses/s -> 20% hit ratio at 5 downloads/s.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success"}'
+        values: '0+60x60'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="InvalidTransition"}'
+        values: '0+240x60'
+      # c2: same ratio but almost no traffic -> silent.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Download", status="Success"}'
+        values: '0+1x60'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Download", status="InvalidTransition"}'
+        values: '0+4x60'
+      # c3: healthy, 90% hits.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0", request_type="Download", status="Success"}'
+        values: '0+540x60'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0", request_type="Download", status="InvalidTransition"}'
+        values: '0+60x60'
+      # c4: uploads that find the chunk already cached are not misses.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c4", pod="c4-0", request_type="Download", status="Success"}'
+        values: '0+600x60'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c4", pod="c4-0", request_type="Upload", status="InvalidTransition"}'
+        values: '0+6000x60'
+    promql_expr_test:
+      - expr: dacs:cache:download_hit_ratio_rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'dacs:cache:download_hit_ratio_rate5m{namespace="cache-server", cache="c1"}'
+            value: 0.2
+          - labels: 'dacs:cache:download_hit_ratio_rate5m{namespace="cache-server", cache="c2"}'
+            value: 0.2
+          - labels: 'dacs:cache:download_hit_ratio_rate5m{namespace="cache-server", cache="c3"}'
+            value: 0.9
+          - labels: 'dacs:cache:download_hit_ratio_rate5m{namespace="cache-server", cache="c4"}'
+            value: 1
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: DacsCacheHitRatioLow
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: DacsCacheHitRatioLow
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1 }
+            exp_annotations:
+              summary: DACS cache hit ratio is low.
+              description: Only 20% of download requests to cache cache-server/c1 were hits over the last 5 minutes. Expected while a cache warms up; sustained, it means workloads are mostly reading from Blob Storage.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheHitRatioLow.md
+
+  # ---------------------------------------------------------------------------
+  # DacsCacheErrorRatioHigh, DacsCacheErrorRatioCritical
+  # ---------------------------------------------------------------------------
+  - name: error ratio
+    interval: 1m
+    input_series:
+      # c1: 1 error/s out of 11 requests/s -> ~9%, warning only.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success"}'
+        values: '0+600x30'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="InternalError"}'
+        values: '0+60x30'
+      # c2: half of all requests fail -> warning and critical.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Upload", status="Success"}'
+        values: '0+60x30'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Upload", status="NetworkError"}'
+        values: '0+60x30'
+      # c3: misses and aborted connections are not errors.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0", request_type="Download", status="Success"}'
+        values: '0+60x30'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0", request_type="Download", status="InvalidTransition"}'
+        values: '0+600x30'
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c3", pod="c3-0", request_type="Unknown", status="NetworkError"}'
+        values: '0+600x30'
+      # c4: everything fails, but at one request every ten minutes -> silent.
+      - series: 'cache_server_request_counter{job="dacs-cache-server", namespace="cache-server", cache="c4", pod="c4-0", request_type="Download", status="InternalError"}'
+        values: '0+0.1x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: DacsCacheErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: DacsCacheErrorRatioCritical
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DacsCacheErrorRatioHigh
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1 }
+            exp_annotations:
+              summary: DACS cache servers are returning errors.
+              description: 9.091% of requests to cache cache-server/c1 ended in an error status (BadRequest|InternalError|NetworkError|NotSet).
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheErrorRatioHigh.md
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c2 }
+            exp_annotations:
+              summary: DACS cache servers are returning errors.
+              description: 50% of requests to cache cache-server/c2 ended in an error status (BadRequest|InternalError|NetworkError|NotSet).
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheErrorRatioHigh.md
+      - eval_time: 20m
+        alertname: DacsCacheErrorRatioCritical
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: cache-server, cache: c2 }
+            exp_annotations:
+              summary: DACS cache servers are failing a large share of requests.
+              description: 50% of requests to cache cache-server/c2 ended in an error status (BadRequest|InternalError|NetworkError|NotSet).
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheErrorRatioHigh.md
+
+  # ---------------------------------------------------------------------------
+  # DacsCacheDownloadLatencyHigh
+  # ---------------------------------------------------------------------------
+  - name: download latency
+    interval: 1m
+    input_series:
+      # c1: every successful download lands in the (1000, 2500] ms bucket.
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success", le="500"}'
+        values: '0x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success", le="1000"}'
+        values: '0x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success", le="2500"}'
+        values: '0+60x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", request_type="Download", status="Success", le="+Inf"}'
+        values: '0+60x40'
+      # c2: fast downloads, slow uploads. Only downloads are alerted on.
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Download", status="Success", le="5"}'
+        values: '0+60x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Download", status="Success", le="+Inf"}'
+        values: '0+60x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Upload", status="Success", le="5000"}'
+        values: '0x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Upload", status="Success", le="10000"}'
+        values: '0+60x40'
+      - series: 'cache_server_successful_request_latency_ms_bucket{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0", request_type="Upload", status="Success", le="+Inf"}'
+        values: '0+60x40'
+    promql_expr_test:
+      - expr: dacs:cache:request_latency_ms:p99_rate5m{request_type="Download"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'dacs:cache:request_latency_ms:p99_rate5m{namespace="cache-server", cache="c1", request_type="Download"}'
+            value: 2485
+          - labels: 'dacs:cache:request_latency_ms:p99_rate5m{namespace="cache-server", cache="c2", request_type="Download"}'
+            value: 4.95
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DacsCacheDownloadLatencyHigh
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: DacsCacheDownloadLatencyHigh
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1, request_type: Download }
+            exp_annotations:
+              summary: DACS cache download latency is high.
+              description: p99 latency of successful downloads from cache cache-server/c1 is 2485ms (threshold 1000ms).
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheDownloadLatencyHigh.md
+
+  # ---------------------------------------------------------------------------
+  # Accept queue, listen drops, SYN queue, accept() errors
+  # ---------------------------------------------------------------------------
+  - name: connection saturation
+    interval: 1m
+    input_series:
+      # c1-0: accept queue starts overflowing at 10m and keeps doing so.
+      - series: 'cache_server_accept_queue_overflows_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '0x10 0+60x40'
+      # c1-2: a single burst of overflows must not alert.
+      - series: 'cache_server_accept_queue_overflows_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-2"}'
+        values: '0x10 5x40'
+      # Listen drops: 0.5/s on c1-0 (below threshold), 2/s on c1-1.
+      - series: 'cache_server_listen_drops_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '0+30x50'
+      - series: 'cache_server_listen_drops_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-1"}'
+        values: '0+120x50'
+      # SYN queue drops on c1-1 only.
+      - series: 'cache_server_syn_queue_full_drops_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '0x50'
+      - series: 'cache_server_syn_queue_full_drops_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-1"}'
+        values: '0+6x50'
+      # accept() failing with EMFILE on c1-0; an old, flat counter on c1-1.
+      - series: 'cache_server_accept_errors_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0", errno="24"}'
+        values: '0+1x50'
+      - series: 'cache_server_accept_errors_total{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-1", errno="24"}'
+        values: '7x50'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DacsCacheServerAcceptQueueOverflow
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: DacsCacheServerAcceptQueueOverflow
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1, pod: c1-0 }
+            exp_annotations:
+              summary: DACS cache server accept queue is overflowing.
+              description: Cache server c1-0 (cache-server/c1) is overflowing its TCP accept queue (1.00/s). New client connections are being dropped or delayed.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerAcceptQueueOverflow.md
+      - eval_time: 5m
+        alertname: DacsCacheServerListenDrops
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: DacsCacheServerListenDrops
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: cache-server, cache: c1, pod: c1-1 }
+            exp_annotations:
+              summary: DACS cache server is dropping incoming connections.
+              description: Cache server c1-1 (cache-server/c1) is dropping 2.00 connection attempts per second at the listen socket.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerListenDrops.md
+      - eval_time: 5m
+        alertname: DacsCacheServerSynQueueDrops
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: DacsCacheServerSynQueueDrops
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1, pod: c1-1 }
+            exp_annotations:
+              summary: DACS cache server SYN queue is full.
+              description: Cache server c1-1 (cache-server/c1) is dropping SYNs because its request queue is full (0.10/s).
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerSynQueueDrops.md
+      - eval_time: 3m
+        alertname: DacsCacheServerAcceptErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: DacsCacheServerAcceptErrors
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: cache-server, cache: c1, pod: c1-0, errno: '24' }
+            exp_annotations:
+              summary: DACS cache server accept() calls are failing.
+              description: accept() on cache server c1-0 (cache-server/c1) is failing with errno 24.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerAcceptErrors.md
+
+  # ---------------------------------------------------------------------------
+  # DacsCacheServerNearCapacity
+  # ---------------------------------------------------------------------------
+  - name: near capacity
+    interval: 1m
+    input_series:
+      # Operator-supplied capacity: 100 GB per server for c1, nothing for c2.
+      - series: 'dacs:cache_server:capacity_bytes{namespace="cache-server", cache="c1"}'
+        values: '100000000000x60'
+      - series: 'cache_server_cache_size_bytes{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '96000000000x60'
+      - series: 'cache_server_cache_size_bytes{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-1"}'
+        values: '85000000000x60'
+      # Without a capacity series the alert has nothing to compare against.
+      - series: 'cache_server_cache_size_bytes{job="dacs-cache-server", namespace="cache-server", cache="c2", pod="c2-0"}'
+        values: '99000000000x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DacsCacheServerNearCapacity
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: DacsCacheServerNearCapacity
+        exp_alerts:
+          - exp_labels: { severity: warning, job: dacs-cache-server, namespace: cache-server, cache: c1, pod: c1-0 }
+            exp_annotations:
+              summary: DACS cache server is close to its size limit.
+              description: Cache server c1-0 (cache-server/c1) is using 96% of its configured size. Eviction should keep usage below its size threshold; staying above it means eviction is disabled or cannot keep up.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsCacheServerNearCapacity.md
+
+  # ---------------------------------------------------------------------------
+  # DacsControllerDown
+  # ---------------------------------------------------------------------------
+  - name: controller never scraped
+    interval: 1m
+    input_series:
+      - series: 'up{job="dacs-cache-server", namespace="cache-server", cache="c1", pod="c1-0"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: DacsControllerDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: DacsControllerDown
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: DACS cache-controller is down or not scraped.
+              description: No healthy cache-controller target has been scraped. Existing caches keep serving, but Cache resources are not reconciled, scaled or rescheduled.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerDown.md
+
+  - name: controller scrape failing
+    interval: 1m
+    input_series:
+      - series: 'up{job="dacs-controller", namespace="cache-server", pod="dacs-controller-manager-0"}'
+        values: '1x5 0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DacsControllerDown
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DacsControllerDown
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: DACS cache-controller is down or not scraped.
+              description: No healthy cache-controller target has been scraped. Existing caches keep serving, but Cache resources are not reconciled, scaled or rescheduled.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerDown.md
+
+  - name: controller healthy
+    interval: 1m
+    input_series:
+      - series: 'up{job="dacs-controller", namespace="cache-server", pod="dacs-controller-manager-0"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: DacsControllerDown
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # DacsControllerReconcileErrors, DacsControllerReconcilePanics,
+  # DacsControllerWorkqueueStalled
+  # ---------------------------------------------------------------------------
+  - name: controller reconcile health
+    interval: 1m
+    input_series:
+      # prod: half of all reconciles fail.
+      - series: 'controller_runtime_reconcile_total{job="dacs-controller", namespace="prod", controller="cache", result="success"}'
+        values: '0+6x40'
+      - series: 'controller_runtime_reconcile_total{job="dacs-controller", namespace="prod", controller="cache", result="error"}'
+        values: '0+6x40'
+      - series: 'controller_runtime_reconcile_errors_total{job="dacs-controller", namespace="prod", controller="cache"}'
+        values: '0+6x40'
+      # staging: an occasional failure, 1%.
+      - series: 'controller_runtime_reconcile_total{job="dacs-controller", namespace="staging", controller="cache", result="success"}'
+        values: '0+99x40'
+      - series: 'controller_runtime_reconcile_total{job="dacs-controller", namespace="staging", controller="cache", result="error"}'
+        values: '0+1x40'
+      - series: 'controller_runtime_reconcile_errors_total{job="dacs-controller", namespace="staging", controller="cache"}'
+        values: '0+1x40'
+      # prod: one panic at 11m.
+      - series: 'controller_runtime_reconcile_panics_total{job="dacs-controller", namespace="prod", controller="cache"}'
+        values: '0x10 1x30'
+      - series: 'controller_runtime_reconcile_panics_total{job="dacs-controller", namespace="staging", controller="cache"}'
+        values: '0x40'
+      # prod: a reconcile that never returns. staging: normal short reconciles.
+      - series: 'workqueue_longest_running_processor_seconds{job="dacs-controller", namespace="prod", name="cache", controller="cache"}'
+        values: '0x5 60+60x34'
+      - series: 'workqueue_longest_running_processor_seconds{job="dacs-controller", namespace="staging", name="cache", controller="cache"}'
+        values: '0 2 0 1 0x36'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DacsControllerReconcileErrors
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DacsControllerReconcileErrors
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: prod, controller: cache }
+            exp_annotations:
+              summary: DACS cache-controller reconciles are failing.
+              description: 50% of reconciles by controller "cache" in namespace prod returned an error.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcileErrors.md
+      - eval_time: 10m
+        alertname: DacsControllerReconcilePanics
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: DacsControllerReconcilePanics
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: prod, controller: cache }
+            exp_annotations:
+              summary: DACS cache-controller reconciler panicked.
+              description: Controller "cache" in namespace prod recovered from 1 panic(s) in the last 15 minutes.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerReconcilePanics.md
+      - eval_time: 30m
+        alertname: DacsControllerReconcilePanics
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: DacsControllerWorkqueueStalled
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: DacsControllerWorkqueueStalled
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: prod, name: cache }
+            exp_annotations:
+              summary: DACS cache-controller has a stuck reconcile.
+              description: A worker of workqueue "cache" in namespace prod has been processing a single item for 20m 0s.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsControllerWorkqueueStalled.md
+
+  # ---------------------------------------------------------------------------
+  # Opt-in client rules: DacsClientDnsErrors and the client hit ratio
+  # ---------------------------------------------------------------------------
+  - name: client dns errors
+    interval: 1m
+    input_series:
+      # trainer keeps failing to resolve one cache server.
+      - series: 'cache_client_dns_errors_total{job="trainer", pid="1", hostname="c1-2.c1.cache-server.svc.cluster.local"}'
+        values: '0+1x60'
+      # evaluator saw a few failures long ago; the counter is flat.
+      - series: 'cache_client_dns_errors_total{job="evaluator", pid="1", hostname="c1-2.c1.cache-server.svc.cluster.local"}'
+        values: '5x60'
+      - series: 'cache_client_download_cache_hits_total{job="trainer", pid="1"}'
+        values: '0+30x60'
+      - series: 'cache_client_download_cache_misses_total{job="trainer", pid="1"}'
+        values: '0+10x60'
+    promql_expr_test:
+      - expr: dacs:client:download_hit_ratio_rate15m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'dacs:client:download_hit_ratio_rate15m{job="trainer"}'
+            value: 0.75
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DacsClientDnsErrors
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: DacsClientDnsErrors
+        exp_alerts:
+          - exp_labels: { severity: warning, job: trainer, hostname: c1-2.c1.cache-server.svc.cluster.local }
+            exp_annotations:
+              summary: DACS clients cannot resolve a cache server.
+              description: Workload trainer failed to resolve cache server c1-2.c1.cache-server.svc.cluster.local 15 times in the last 15m. Requests for keys owned by that server fall through to Blob Storage.
+              runbook_url: https://github.com/cb-Sigma/dacs-mixin/blob/main/docs/runbooks/DacsClientDnsErrors.md

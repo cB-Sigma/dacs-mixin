@@ -1,0 +1,19 @@
+apiVersion: v2
+name: dacs-mixin
+description: Prometheus alerts, recording rules, scrape monitors and Grafana dashboards for DACS (Distributed Accelerator for Cloud Storage). Unofficial community project.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/cb-Sigma/dacs-mixin
+sources:
+  - https://github.com/cb-Sigma/dacs-mixin
+  - https://github.com/Azure/dacs
+keywords:
+  - dacs
+  - monitoring
+  - prometheus
+  - grafana
+  - mixin
+annotations:
+  # Short commit of Azure/dacs the metric inventory was verified against.
+  dacs-mixin/verified-against-dacs-commit: 27ec57c

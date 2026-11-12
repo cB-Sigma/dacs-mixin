@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a dashboard panel, alert, rule or installation option
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to see or be alerted on?
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Which DACS metrics would it use?
+      description: >
+        Alerts and panels can only be built on metrics DACS actually exposes
+        (see docs/metrics.md). If the signal you need is not there, say so; it
+        may be worth raising with the DACS project.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds you have tried

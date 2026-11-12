@@ -1,0 +1,93 @@
+# Default values for dacs-mixin.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Labels added to every object. Most Prometheus Operator installations only
+# pick up monitors and rules that carry a specific label, for example
+#   commonLabels:
+#     release: kube-prometheus-stack
+commonLabels: {}
+
+rules:
+  # Create a PrometheusRule (requires the Prometheus Operator CRDs).
+  enabled: true
+  # Extra labels for the PrometheusRule only.
+  labels: {}
+  cache:
+    # Recording rules for hit ratio, error ratio, latency quantiles and fleet
+    # size. The cache alerts depend on them.
+    recording: true
+    # Alerts on cache server availability, traffic and saturation.
+    alerts: true
+  controller:
+    # Alerts on the cache-controller manager.
+    alerts: true
+  client:
+    # Rules and alerts on cache client metrics. Off by default: the client
+    # only exports metrics when STORAGE_METRIC_OTEL_ENABLED=true, pushes them
+    # over OTLP, and the resulting series names depend on your pipeline.
+    # See docs/client-metrics.md in the repository.
+    enabled: false
+  # Per-server capacity, which DACS does not export. Each entry becomes a
+  # static dacs:cache_server:capacity_bytes series and arms the
+  # DacsCacheServerNearCapacity alert for that cache. serverSizeInGB is the
+  # same number as spec.serverSizeInGB on the Cache resource.
+  #   capacity:
+  #     - namespace: cache-server
+  #       cache: cache-sample
+  #       serverSizeInGB: 100
+  capacity: []
+
+monitors:
+  # Extra labels for the PodMonitor and ServiceMonitor only.
+  labels: {}
+  cacheServer:
+    # PodMonitor for cache server pods. Upstream DACS does not ship one.
+    enabled: true
+    # Namespaces to look for cache server pods in. Empty means all namespaces.
+    namespaces: []
+    # Pod labels to select. `app: cacheserver` is set by the cache-controller.
+    podSelector:
+      app: cacheserver
+    interval: 30s
+    scrapeTimeout: ""
+  controller:
+    # ServiceMonitor for the cache-controller metrics Service. Disable it if
+    # you already enabled `prometheus.enable` in the upstream DACS chart, or
+    # set _config.controllerSelector to that monitor's job when rendering.
+    enabled: true
+    # Namespaces to look for the controller Service in. Empty means all namespaces.
+    namespaces: []
+    # Labels of the upstream `<namePrefix>-manager-metrics-service`.
+    serviceSelector:
+      app.kubernetes.io/name: dacs
+      control-plane: controller-manager
+    interval: 30s
+    scrapeTimeout: ""
+    # The controller serves metrics over HTTPS with Kubernetes authn/authz.
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    # Alternative to bearerTokenFile (set that to "" first), for example
+    #   authorization:
+    #     credentials:
+    #       name: prometheus-dacs-token
+    #       key: token
+    authorization: {}
+    # The certificate is self-signed unless cert-manager is enabled upstream.
+    tlsConfig:
+      insecureSkipVerify: true
+
+dashboards:
+  # Create one ConfigMap per dashboard for the Grafana sidecar.
+  enabled: true
+  # Namespace for the ConfigMaps. Defaults to the release namespace.
+  namespace: ""
+  # Label the Grafana dashboard sidecar watches for.
+  labels:
+    grafana_dashboard: "1"
+  # For example `grafana_folder: DACS` when the sidecar has folderAnnotation set.
+  annotations: {}
+  overview: true
+  cacheServers: true
+  clients: true
+  controller: true
